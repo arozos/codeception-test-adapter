@@ -1,0 +1,133 @@
+{
+  "name": "codeception-test-explorer",
+  "displayName": "Codeception Test Explorer",
+  "description": "Run and debug Codeception tests in VSCode's native Test Explorer",
+  "version": "0.2.0",
+  "publisher": "andreasrozos",
+  "author": {
+    "name": "Andreas Rozos"
+  },
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/andreasrozos/codeception-test-adapter.git"
+  },
+  "homepage": "https://github.com/andreasrozos/codeception-test-adapter#readme",
+  "bugs": {
+    "url": "https://github.com/andreasrozos/codeception-test-adapter/issues"
+  },
+  "keywords": [
+    "codeception",
+    "php",
+    "testing",
+    "test-explorer",
+    "test-adapter",
+    "php-testing",
+    "docker",
+    "coverage",
+    "bdd",
+    "unit-testing"
+  ],
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Testing"
+  ],
+  "galleryBanner": {
+    "color": "#4B8BBE",
+    "theme": "dark"
+  },
+  "activationEvents": [
+    "workspaceContains:**/codeception.yml",
+    "workspaceContains:**/codeception.dist.yml"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Codeception Test Explorer",
+      "properties": {
+        "codeceptionphp.binary.path": {
+          "type": "string",
+          "default": "vendor/bin/codecept",
+          "description": "Path to codecept binary",
+          "scope": "resource"
+        },
+        "codeceptionphp.binary.args": {
+          "type": "string",
+          "default": "--steps",
+          "description": "Additional arguments/flags to pass to codecept binary",
+          "scope": "resource"
+        },
+        "codeceptionphp.configFile": {
+          "type": "string",
+          "default": "codeception.yml",
+          "description": "Path to codeception configuration file",
+          "scope": "resource"
+        },
+        "codeceptionphp.suites": {
+          "type": "array",
+          "default": [
+            "unit",
+            "functional",
+            "acceptance"
+          ],
+          "description": "Test suites to discover",
+          "scope": "resource"
+        },
+        "codeceptionphp.docker.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Run Codeception tests inside a Docker container",
+          "scope": "resource"
+        },
+        "codeceptionphp.docker.container": {
+          "type": "string",
+          "default": "",
+          "description": "Docker container name or ID to run tests in",
+          "scope": "resource"
+        },
+        "codeceptionphp.docker.workdir": {
+          "type": "string",
+          "default": "",
+          "description": "Working directory inside the Docker container (auto-detected when selecting container)",
+          "scope": "resource"
+        },
+        "codeceptionphp.coverage.alwaysRun": {
+          "type": "boolean",
+          "default": false,
+          "description": "Always run tests with coverage enabled (uses the regular Run button)",
+          "scope": "resource"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "codeceptionphp.runFromDocker",
+        "title": "Codeception Test Explorer: Run From Docker..."
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "@types/vscode": "^1.75.0",
+    "@types/xml2js": "^0.4.14",
+    "@typescript-eslint/eslint-plugin": "^5.0.0",
+    "@typescript-eslint/parser": "^5.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "glob": "^10.0.0",
+    "php-parser": "^3.1.5",
+    "xml2js": "^0.6.0"
+  }
+}
