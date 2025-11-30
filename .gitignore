@@ -20,6 +20,7 @@ Thumbs.db
 .vscode-test/
 .vscode/.ropeproject
 .vscode/
+.cursor/
 
 # Environment files
 .env
