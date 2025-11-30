@@ -14,15 +14,18 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Command: "Run From Docker..." to select and configure Docker containers
 - Configuration options for Docker (enabled, container, workdir)
 - Configuration option for always running tests with coverage
+- esbuild bundling for proper VSIX packaging
 
 ### Changed
 - Improved test discovery and parsing
 - Enhanced error handling and logging
 - Better output channel integration for debugging
+- Migrated from TypeScript compilation to esbuild bundling for production builds
 
 ### Fixed
 - Test execution reliability improvements
 - Parser handling for various Codeception test formats
+- **Critical**: Fixed extension not loading when installed from VSIX due to missing bundled dependencies
 
 ## [0.1.0] - Initial Release
 
