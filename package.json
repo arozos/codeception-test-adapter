@@ -2,7 +2,7 @@
   "name": "codeception-test-explorer",
   "displayName": "Codeception Test Explorer",
   "description": "Run and debug Codeception tests in VSCode's native Test Explorer",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "publisher": "andreasrozos",
   "author": {
     "name": "Andreas Rozos"
@@ -68,12 +68,8 @@
         },
         "codeceptionphp.suites": {
           "type": "array",
-          "default": [
-            "unit",
-            "functional",
-            "acceptance"
-          ],
-          "description": "Test suites to discover",
+          "default": [],
+          "description": "Test suites to discover (leave empty to auto-discover all suites from tests/ directory)",
           "scope": "resource"
         },
         "codeceptionphp.docker.enabled": {
@@ -93,6 +89,30 @@
           "default": "",
           "description": "Working directory inside the Docker container (auto-detected when selecting container)",
           "scope": "resource"
+        },
+        "codeceptionphp.docker.env": {
+          "type": "object",
+          "default": {},
+          "description": "Environment variables to pass to Docker container when running tests (e.g., {\"TEST_DB_ADMIN_USER\": \"root\", \"TEST_DB_ADMIN_PASSWORD\": \"secret\"})",
+          "scope": "resource"
+        },
+        "codeceptionphp.groups.include": {
+          "type": "array",
+          "default": [],
+          "description": "Run only tests with these groups/tags (e.g., [\"api\", \"integration\"]). Leave empty to run all groups.",
+          "scope": "resource",
+          "items": {
+            "type": "string"
+          }
+        },
+        "codeceptionphp.groups.exclude": {
+          "type": "array",
+          "default": [],
+          "description": "Skip tests with these groups/tags (e.g., [\"slow\", \"external\"]). Leave empty to skip no groups.",
+          "scope": "resource",
+          "items": {
+            "type": "string"
+          }
         },
         "codeceptionphp.coverage.alwaysRun": {
           "type": "boolean",

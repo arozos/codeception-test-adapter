@@ -61,7 +61,15 @@ Configure in VSCode settings (File > Preferences > Settings):
   "codeceptionphp.binary.path": "vendor/bin/codecept",
   "codeceptionphp.binary.args": "--steps",
   "codeceptionphp.configFile": "codeception.yml",
-  "codeceptionphp.suites": ["unit", "functional", "acceptance"]
+  "codeceptionphp.suites": [],
+  "codeceptionphp.docker.enabled": true,
+  "codeceptionphp.docker.container": "app-stack-lastmily_api-1",
+  "codeceptionphp.docker.env": {
+    "TEST_DB_ADMIN_USER": "root",
+    "TEST_DB_ADMIN_PASSWORD": "lastmily_mysqldb_root_pass"
+  },
+  "codeceptionphp.groups.include": ["api", "integration"],
+  "codeceptionphp.groups.exclude": ["slow", "external"]
 }
 ```
 
@@ -70,10 +78,13 @@ Configure in VSCode settings (File > Preferences > Settings):
 - `codeceptionphp.binary.path` - Path to codecept binary (default: `vendor/bin/codecept`)
 - `codeceptionphp.binary.args` - Additional arguments/flags to pass to codecept binary (default: `--steps`)
 - `codeceptionphp.configFile` - Path to codeception config (default: `codeception.yml`)
-- `codeceptionphp.suites` - Array of suites to discover (default: `["unit", "functional", "acceptance"]`)
+- `codeceptionphp.suites` - Array of suites to discover (default: `[]` - auto-discovers all suites from `tests/` directory). You can specify specific suites like `["unit", "functional", "acceptance", "integration"]` if you want to limit discovery.
 - `codeceptionphp.docker.enabled` - Run tests inside a Docker container (default: `false`)
 - `codeceptionphp.docker.container` - Docker container name or ID to run tests in
 - `codeceptionphp.docker.workdir` - Working directory inside the Docker container
+- `codeceptionphp.docker.env` - Environment variables to pass to Docker container (default: `{}`). Only applied when Docker is enabled. Empty values are ignored.
+- `codeceptionphp.groups.include` - Run only tests with these groups/tags (default: `[]`). Uses Codeception's `--group` flag. Leave empty to run all groups.
+- `codeceptionphp.groups.exclude` - Skip tests with these groups/tags (default: `[]`). Uses Codeception's `--skip-group` flag. Leave empty to skip no groups.
 - `codeceptionphp.coverage.alwaysRun` - Always run tests with coverage enabled (default: `false`)
 
 ## Coverage Visualization
@@ -94,14 +105,12 @@ This extension works seamlessly with [Coverage Gutters](https://marketplace.visu
     "tests/_output/coverage.xml",
     "tests/_output/clover.xml"
   ],
-  "coverage-gutters.remotePathResolve": [
-    "/var/www/html",
-    "."
-  ]
+  "coverage-gutters.remotePathResolve": ["/var/www/html", "."]
 }
 ```
 
-**Note:** 
+**Note:**
+
 - Set `coverageFileNames` to match the path where Codeception generates your coverage files
 - Only use `remotePathResolve` if you're running tests in Docker - it maps the container path (e.g., `/var/www/html`) to your local workspace (`.`)
 
@@ -145,12 +154,76 @@ project/
 - Hover over a test method
 - Click "Run Test" or "Debug Test" in the CodeLens
 
+## Test Filtering with Groups/Tags
+
+The extension supports Codeception's `@group` annotations for organizing and filtering tests.
+
+### Adding Groups to Tests
+
+Add `@group` annotations to your test methods:
+
+```php
+<?php
+
+class UserCest
+{
+    /**
+     * @group api
+     * @group integration
+     * @group critical
+     */
+    public function testUserLogin(IntegrationTester $I)
+    {
+        // test code
+    }
+
+    /**
+     * @group api
+     * @group slow
+     */
+    public function testUserRegistration(IntegrationTester $I)
+    {
+        // test code
+    }
+}
+```
+
+### Filtering in VSCode
+
+**Option 1: Visual Filtering (VSCode Native)**
+
+- Groups appear as tags in the Test Explorer
+- Click the filter icon in Test Explorer toolbar
+- Select tags to show/hide tests visually
+- This only affects the UI view, not test execution
+
+**Option 2: Execution Filtering (Settings-based)**
+
+- Configure `codeceptionphp.groups.include` to run only specific groups
+- Configure `codeceptionphp.groups.exclude` to skip specific groups
+- These settings apply to ALL test runs
+
+```json
+{
+  // Run only API and integration tests
+  "codeceptionphp.groups.include": ["api", "integration"],
+
+  // Skip slow and external tests
+  "codeceptionphp.groups.exclude": ["slow", "external"]
+}
+```
+
+**Example Use Cases:**
+
+- Development: Exclude slow tests with `"groups.exclude": ["slow"]`
+- CI/CD: Run only critical tests with `"groups.include": ["critical"]`
+- API Testing: Run only API tests with `"groups.include": ["api"]`
+
 ## Roadmap
 
 - [ ] Debug support with Xdebug integration
 - [ ] Better error parsing and display
 - [ ] Custom test arguments configuration
-
 
 ### Contributing
 

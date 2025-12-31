@@ -28,10 +28,10 @@ export class CodeceptionTestProvider {
 
     constructor(controller: vscode.TestController, outputChannel: vscode.OutputChannel, coverageManager: CoverageManager) {
         this.outputChannel = outputChannel;
-        
+
         this.testController = controller;
         this.workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
-        
+
         try {
             this.phpParser = new PhpTestParser(outputChannel);
         } catch (error: any) {
@@ -98,7 +98,7 @@ export class CodeceptionTestProvider {
     private setupFileWatcher() {
         // Create file system watcher for test files
         this.fileWatcher = vscode.workspace.createFileSystemWatcher('**/*{Test,Cest,Cept}.php');
-        
+
         // When files change, rediscover tests
         // Test results are preserved by VSCode (standard behavior)
         this.fileWatcher.onDidCreate(() => this.discoverTests());
@@ -122,7 +122,7 @@ export class CodeceptionTestProvider {
     private getDockerConfig(): { container: string; workdir: string } | null {
         const config = vscode.workspace.getConfiguration('codeceptionphp');
         const useDocker = config.get<boolean>('docker.enabled', false);
-        
+
         if (!useDocker) {
             return null;
         }
@@ -138,6 +138,41 @@ export class CodeceptionTestProvider {
     }
 
     /**
+     * Auto-discover available test suites from the tests directory
+     */
+    private discoverAvailableSuites(): string[] {
+        const testsDir = path.join(this.workspaceRoot, 'tests');
+
+        if (!fs.existsSync(testsDir)) {
+            return [];
+        }
+
+        try {
+            const entries = fs.readdirSync(testsDir, { withFileTypes: true });
+            const suites: string[] = [];
+
+            for (const entry of entries) {
+                // Only include directories that contain test files
+                if (entry.isDirectory()) {
+                    const suiteDir = path.join(testsDir, entry.name);
+                    const pattern = path.join(suiteDir, '**/*{Test,Cest,Cept}.php');
+                    const files = glob.sync(pattern);
+
+                    // Only add suite if it has test files
+                    if (files.length > 0) {
+                        suites.push(entry.name);
+                    }
+                }
+            }
+
+            return suites;
+        } catch (error) {
+            this.outputChannel.appendLine(`[ERROR] Failed to discover suites: ${error}`);
+            return [];
+        }
+    }
+
+    /**
      * Discovers tests from the workspace.
      * Test results are preserved across discovery - this matches the behavior
      * of popular test extensions (Jest, Python Test Explorer, etc.)
@@ -150,7 +185,19 @@ export class CodeceptionTestProvider {
         this.testController.items.replace([]);
 
         const config = vscode.workspace.getConfiguration('codeceptionphp');
-        const suites = config.get<string[]>('suites', ['unit', 'functional', 'acceptance']);
+        const configuredSuites = config.get<string[]>('suites');
+
+        let suites: string[];
+
+        // If suites are explicitly configured, use them
+        // Otherwise, auto-discover from the tests directory
+        if (configuredSuites && configuredSuites.length > 0) {
+            suites = configuredSuites;
+            this.outputChannel.appendLine(`[Discovery] Using configured suites: ${suites.join(', ')}`);
+        } else {
+            suites = this.discoverAvailableSuites();
+            this.outputChannel.appendLine(`[Discovery] Auto-discovered suites: ${suites.join(', ')}`);
+        }
 
         for (const suite of suites) {
             await this.discoverSuiteTests(suite);
@@ -159,7 +206,7 @@ export class CodeceptionTestProvider {
 
     private async discoverSuiteTests(suite: string) {
         const testsDir = path.join(this.workspaceRoot, 'tests', suite);
-        
+
         if (!fs.existsSync(testsDir)) {
             return;
         }
@@ -193,7 +240,7 @@ export class CodeceptionTestProvider {
         // Create file test item
         const fileId = `${suite}:${relativePath}`;
         let fileItem = suiteItem.children.get(fileId);
-        
+
         if (!fileItem) {
             fileItem = this.testController.createTestItem(
                 fileId,
@@ -221,7 +268,7 @@ export class CodeceptionTestProvider {
         // Process AST-parsed methods
         for (const method of parsed.methods) {
             const testId = `${fileId}::${method.name}`;
-            
+
             // Create test item with accurate line numbers
             const testItem = this.testController.createTestItem(
                 testId,
@@ -242,7 +289,7 @@ export class CodeceptionTestProvider {
 
             // Add test groups as tags
             if (method.annotations.groups && method.annotations.groups.length > 0) {
-                testItem.tags = method.annotations.groups.map(group => 
+                testItem.tags = method.annotations.groups.map(group =>
                     new vscode.TestTag(group)
                 );
             }
@@ -260,7 +307,7 @@ export class CodeceptionTestProvider {
                 );
                 dataProviderItem.range = testItem.range;
                 if (method.annotations.groups && method.annotations.groups.length > 0) {
-                    dataProviderItem.tags = method.annotations.groups.map(group => 
+                    dataProviderItem.tags = method.annotations.groups.map(group =>
                         new vscode.TestTag(group)
                     );
                 }
@@ -282,14 +329,14 @@ export class CodeceptionTestProvider {
         uri: vscode.Uri
     ): void {
         const fileContent = fs.readFileSync(filePath, 'utf-8');
-        
+
         // Match: public function testSomething or public function something (for Cest)
         const testMethodRegex = /public\s+function\s+(test\w+|\w+)\s*\(/g;
         let match;
 
         while ((match = testMethodRegex.exec(fileContent)) !== null) {
             const methodName = match[1];
-            
+
             // Skip constructor and _before/_after methods
             if (methodName === '__construct' || methodName.startsWith('_')) {
                 continue;
@@ -393,7 +440,7 @@ export class CodeceptionTestProvider {
 
             // Generate unique coverage file path (container path if Docker, host path otherwise)
             coverageFilePath = this.coverageManager.generateCoverageFilePath(
-                this.workspaceRoot, 
+                this.workspaceRoot,
                 suiteName,
                 dockerWorkdir
             );
@@ -401,18 +448,18 @@ export class CodeceptionTestProvider {
             // Run tests with coverage
             // IMPORTANT: Run all tests in a SINGLE command to get cumulative coverage
             // Running tests one-by-one causes each test to overwrite the coverage.xml file
-            
+
             if (queue.length === 1) {
                 // Single test - run directly
                 const test = queue[0];
                 await this.runTestWithCoverage(test, run, coverageFilePath, token);
             } else {
                 // Multiple tests - run as a batch to get cumulative coverage
-                
+
                 // Build a single command that runs all tests
                 const config = vscode.workspace.getConfiguration('codeceptionphp');
                 const binary = config.get<string>('binary.path', 'vendor/bin/codecept');
-                
+
                 // Group tests by suite to build efficient commands
                 const testsBySuite = new Map<string, vscode.TestItem[]>();
                 for (const test of queue) {
@@ -422,20 +469,20 @@ export class CodeceptionTestProvider {
                     }
                     testsBySuite.get(suiteId)!.push(test);
                 }
-                
+
                 // Run each suite with coverage
                 for (const [suiteId, tests] of testsBySuite) {
                     if (token.isCancellationRequested) {
                         tests.forEach(t => run.skipped(t));
                         continue;
                     }
-                    
+
                     // For suite-level runs, just run the whole suite
                     const command = this.buildTestCommand(binary, suiteId, coverageFilePath);
-                    
+
                     // Mark all tests as started
                     tests.forEach(t => run.started(t));
-                    
+
                     // Execute the suite
                     await this.executeTestWithStreaming(tests[0], run, command, token);
                 }
@@ -444,11 +491,11 @@ export class CodeceptionTestProvider {
             // Parse and attach coverage
             // Codeception outputs coverage to tests/_output/coverage.xml by default
             const defaultCoveragePath = path.join(this.workspaceRoot, 'tests', '_output', 'coverage.xml');
-            
+
             // Wait a moment for file to be written (increase wait time for Docker)
             const waitTime = useDocker ? 1000 : 500;
             await new Promise(resolve => setTimeout(resolve, waitTime));
-            
+
             // Also check for coverage files in Docker if applicable
             let coveragePath = defaultCoveragePath;
             if (useDocker && dockerWorkdir) {
@@ -463,17 +510,17 @@ export class CodeceptionTestProvider {
                     }
                 }
             }
-            
+
             if (fs.existsSync(coveragePath)) {
                 // Validate file size
                 const stats = fs.statSync(coveragePath);
-                
+
                 if (stats.size === 0) {
                     this.outputChannel.appendLine('WARNING: Coverage file is empty');
                 } else {
                     // Get Docker config for reading coverage file
                     const dockerConfig = this.getDockerConfig();
-                    const containerCoveragePath = dockerConfig && dockerWorkdir 
+                    const containerCoveragePath = dockerConfig && dockerWorkdir
                         ? `${dockerWorkdir}/tests/_output/coverage.xml`
                         : undefined;
 
@@ -482,7 +529,7 @@ export class CodeceptionTestProvider {
                         containerCoveragePath,
                         dockerConfig?.container
                     );
-                    
+
                     if (coverageData.size === 0) {
                         this.outputChannel.appendLine('WARNING: No coverage data found in XML file');
                         this.outputChannel.appendLine('This may indicate:');
@@ -491,7 +538,7 @@ export class CodeceptionTestProvider {
                         this.outputChannel.appendLine('  3. Xdebug coverage mode is not enabled');
                     } else {
                         const fileCoverages = this.coverageParser.convertToVSCodeCoverage(
-                            coverageData, 
+                            coverageData,
                             this.workspaceRoot,
                             dockerWorkdir
                         );
@@ -538,7 +585,7 @@ export class CodeceptionTestProvider {
         } catch (error: any) {
             const errorMessage = error?.message || String(error);
             this.outputChannel.appendLine(`ERROR: ${errorMessage}`);
-            
+
             // Show user-friendly error
             vscode.window.showWarningMessage(
                 `Coverage collection failed: ${errorMessage}. Test results are still available.`,
@@ -600,7 +647,7 @@ export class CodeceptionTestProvider {
                             if (passed) {
                                 run.passed(testItem);
                             } else {
-                                const message = output 
+                                const message = output
                                     ? new vscode.TestMessage(output)
                                     : this.createErrorMessage(allOutput, '', testItem);
                                 run.failed(testItem, message);
@@ -623,8 +670,8 @@ export class CodeceptionTestProvider {
                     hasFatalError = this.detectFatalError(allOutput, '');
 
                     // Mark parent test based on results
-                    const hasFailures = exitCode !== 0 || hasFatalError || 
-                                       Array.from(testResults.values()).some(r => !r.passed);
+                    const hasFailures = exitCode !== 0 || hasFatalError ||
+                        Array.from(testResults.values()).some(r => !r.passed);
 
                     if (hasFailures) {
                         const message = this.createErrorMessage(allOutput, '', test);
@@ -643,12 +690,12 @@ export class CodeceptionTestProvider {
 
             // Check for Docker-specific errors
             const isDockerError = this.isDockerError(errorMessage, allOutput);
-            
+
             if (isDockerError) {
                 const dockerErrorMsg = this.getDockerErrorMessage(errorMessage, allOutput);
                 this.outputChannel.appendLine(`Docker ERROR: ${dockerErrorMsg}`);
                 run.appendOutput(`\r\nDocker Error: ${dockerErrorMsg}\r\n`);
-                
+
                 vscode.window.showErrorMessage(
                     `Docker Error: ${dockerErrorMsg}`,
                     'View Output',
@@ -662,7 +709,7 @@ export class CodeceptionTestProvider {
                         vscode.window.showInformationMessage('Docker support disabled. Tests will run locally.');
                     }
                 });
-                
+
                 const message = new vscode.TestMessage(`Docker execution failed: ${dockerErrorMsg}`);
                 run.failed(test, message);
                 return;
@@ -698,7 +745,7 @@ export class CodeceptionTestProvider {
                     // Add multiple variations for matching
                     map.set(methodName, test);
                     map.set(methodName.toLowerCase(), test);
-                    
+
                     // Handle test prefix removal (testMethodName -> methodName)
                     if (methodName.toLowerCase().startsWith('test')) {
                         const withoutTest = methodName.substring(4);
@@ -761,7 +808,7 @@ export class CodeceptionTestProvider {
 
             // Get Docker config for reading XML file
             const dockerConfig = this.getDockerConfig();
-            const containerXmlPath = dockerConfig?.workdir 
+            const containerXmlPath = dockerConfig?.workdir
                 ? `${dockerConfig.workdir}/tests/_output/report.xml`
                 : undefined;
 
@@ -838,7 +885,7 @@ export class CodeceptionTestProvider {
 
             // Get Docker config for reading XML file
             const dockerConfig = this.getDockerConfig();
-            const containerXmlPath = dockerConfig?.workdir 
+            const containerXmlPath = dockerConfig?.workdir
                 ? `${dockerConfig.workdir}/tests/_output/report.xml`
                 : undefined;
 
@@ -961,6 +1008,28 @@ export class CodeceptionTestProvider {
             command += ` ${binaryArgs}`;
         }
 
+        // Add group filters if configured
+        const includeGroups = config.get<string[]>('groups.include', []);
+        const excludeGroups = config.get<string[]>('groups.exclude', []);
+
+        // Only add --group flags if array is not empty and contains non-empty strings
+        if (includeGroups && includeGroups.length > 0) {
+            for (const group of includeGroups) {
+                if (group && group.trim()) {
+                    command += ` --group ${group.trim()}`;
+                }
+            }
+        }
+
+        // Only add --skip-group flags if array is not empty and contains non-empty strings
+        if (excludeGroups && excludeGroups.length > 0) {
+            for (const group of excludeGroups) {
+                if (group && group.trim()) {
+                    command += ` --skip-group ${group.trim()}`;
+                }
+            }
+        }
+
         // Add XML output flag for accurate test result parsing
         // Codeception outputs to tests/_output/report.xml by default
         command += ` --xml`;
@@ -979,10 +1048,10 @@ export class CodeceptionTestProvider {
 
         if (useDocker) {
             const container = config.get<string>('docker.container', '');
-            
-        if (!container) {
-            this.outputChannel.appendLine('WARNING: Docker enabled but no container specified');
-            vscode.window.showWarningMessage(
+
+            if (!container) {
+                this.outputChannel.appendLine('WARNING: Docker enabled but no container specified');
+                vscode.window.showWarningMessage(
                     'Docker is enabled but no container is configured. Please select a container using "Codeception Test Explorer: Run From Docker..." command.',
                     'OK'
                 );
@@ -992,12 +1061,26 @@ export class CodeceptionTestProvider {
             // Get the working directory inside the container (auto-detected or configured)
             const workdir = config.get<string>('docker.workdir', '') || this.workspaceRoot;
 
-            // If running with coverage, set XDEBUG_MODE environment variable using Docker's -e flag
-            const envFlag = coverageFilePath ? '-e XDEBUG_MODE=coverage ' : '';
+            // Build environment variable flags
+            let envFlags = '';
+
+            // If running with coverage, set XDEBUG_MODE environment variable
+            if (coverageFilePath) {
+                envFlags += '-e XDEBUG_MODE=coverage ';
+            }
+
+            // Add custom environment variables from settings
+            const dockerEnv = config.get<Record<string, string>>('docker.env', {});
+            for (const [key, value] of Object.entries(dockerEnv)) {
+                // Only add -e flag if both key and value are non-empty
+                if (key && key.trim() && value && value.trim()) {
+                    envFlags += `-e ${key}=${value} `;
+                }
+            }
 
             // Wrap command with docker exec
             // Use -e flag to set environment variables and -w flag to set working directory inside container
-            command = `docker exec ${envFlag}-w "${workdir}" ${container} ${command}`;
+            command = `docker exec ${envFlags}-w "${workdir}" ${container} ${command}`;
         }
 
         return command;
@@ -1016,7 +1099,7 @@ export class CodeceptionTestProvider {
         for (let line of lines) {
             // Create a version without ANSI codes for comparison
             const lineWithoutAnsi = line.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '').trim();
-            
+
             // Preserve empty lines for formatting
             if (!lineWithoutAnsi) {
                 processedLines.push('');
@@ -1057,10 +1140,10 @@ export class CodeceptionTestProvider {
         try {
             const config = vscode.workspace.getConfiguration('codeceptionphp');
             const binary = config.get<string>('binary.path', 'vendor/bin/codecept');
-            
+
             // Build command with coverage flags
             const command = this.buildTestCommand(binary, test.id, coverageFilePath);
-            
+
             // Append command to output
             run.appendOutput(`Running with coverage: ${command}\r\n`);
 
@@ -1108,15 +1191,15 @@ export class CodeceptionTestProvider {
             const stdout = error.stdout || '';
             const stderr = error.stderr || '';
             const errorMessage = error.message || error.toString();
-            
+
             // Check for Docker-specific errors
             const isDockerError = this.isDockerError(errorMessage, stderr);
-            
+
             if (isDockerError) {
                 const dockerErrorMsg = this.getDockerErrorMessage(errorMessage, stderr);
                 this.outputChannel.appendLine(`Docker ERROR: ${dockerErrorMsg}`);
                 run.appendOutput(`\r\nDocker Error: ${dockerErrorMsg}\r\n`);
-                
+
                 vscode.window.showErrorMessage(
                     `Docker Error: ${dockerErrorMsg}`,
                     'View Output',
@@ -1130,12 +1213,12 @@ export class CodeceptionTestProvider {
                         vscode.window.showInformationMessage('Docker support disabled. Tests will run locally.');
                     }
                 });
-                
+
                 const message = new vscode.TestMessage(`Docker execution failed: ${dockerErrorMsg}`);
                 run.failed(test, message);
                 return;
             }
-            
+
             // Append all available output
             if (stdout) {
                 const cleanedOutput = this.cleanCodeceptionOutput(stdout);
@@ -1147,13 +1230,13 @@ export class CodeceptionTestProvider {
             if (!stdout && !stderr) {
                 run.appendOutput(`\r\nError: ${errorMessage}\r\n`);
             }
-            
+
             // Parse output to determine if it's a test failure or execution error
             const hasFatalError = this.detectFatalError(stdout, stderr);
-            const hasFailures = stdout.includes('FAILURES!') || stdout.includes('ERRORS!') || 
-                               stderr.includes('FAILED') || stdout.includes('There was 1 error') ||
-                               stdout.includes('There were') || hasFatalError;
-            
+            const hasFailures = stdout.includes('FAILURES!') || stdout.includes('ERRORS!') ||
+                stderr.includes('FAILED') || stdout.includes('There was 1 error') ||
+                stdout.includes('There were') || hasFatalError;
+
             // If this test has children (suite or file level), parse output for individual results
             if (test.children.size > 0 && stdout) {
                 this.parseAndMarkChildren(test, run, stdout, stderr, hasFailures);
@@ -1171,7 +1254,7 @@ export class CodeceptionTestProvider {
         try {
             const config = vscode.workspace.getConfiguration('codeceptionphp');
             const binary = config.get<string>('binary.path', 'vendor/bin/codecept');
-            
+
             // Build command based on test level
             // Test ID formats:
             //   Suite:  "unit"
@@ -1228,16 +1311,16 @@ export class CodeceptionTestProvider {
             const stdout = error.stdout || '';
             const stderr = error.stderr || '';
             const errorMessage = error.message || error.toString();
-            
+
             // Check for Docker-specific errors
             const isDockerError = this.isDockerError(errorMessage, stderr);
-            
+
             if (isDockerError) {
                 // Docker execution error - show user-friendly message
                 const dockerErrorMsg = this.getDockerErrorMessage(errorMessage, stderr);
                 this.outputChannel.appendLine(`Docker ERROR: ${dockerErrorMsg}`);
                 run.appendOutput(`\r\nDocker Error: ${dockerErrorMsg}\r\n`);
-                
+
                 // Show notification
                 vscode.window.showErrorMessage(
                     `Docker Error: ${dockerErrorMsg}`,
@@ -1252,13 +1335,13 @@ export class CodeceptionTestProvider {
                         vscode.window.showInformationMessage('Docker support disabled. Tests will run locally.');
                     }
                 });
-                
+
                 // Mark test as failed
                 const message = new vscode.TestMessage(`Docker execution failed: ${dockerErrorMsg}`);
                 run.failed(test, message);
                 return;
             }
-            
+
             // Append all available output
             if (stdout) {
                 const cleanedOutput = this.cleanCodeceptionOutput(stdout);
@@ -1270,13 +1353,13 @@ export class CodeceptionTestProvider {
             if (!stdout && !stderr) {
                 run.appendOutput(`\r\nError: ${errorMessage}\r\n`);
             }
-            
+
             // Parse output to determine if it's a test failure or execution error
             const hasFatalError = this.detectFatalError(stdout, stderr);
-            const hasFailures = stdout.includes('FAILURES!') || stdout.includes('ERRORS!') || 
-                               stderr.includes('FAILED') || stdout.includes('There was 1 error') ||
-                               stdout.includes('There were') || hasFatalError;
-            
+            const hasFailures = stdout.includes('FAILURES!') || stdout.includes('ERRORS!') ||
+                stderr.includes('FAILED') || stdout.includes('There was 1 error') ||
+                stdout.includes('There were') || hasFatalError;
+
             // If this test has children (suite or file level), parse output for individual results
             if (test.children.size > 0 && stdout) {
                 this.parseAndMarkChildren(test, run, stdout, stderr, hasFailures);
@@ -1297,15 +1380,15 @@ export class CodeceptionTestProvider {
     ) {
         // Parse individual test results from output
         const testResults = this.parseTestResults(stdout, stderr);
-        
+
         // Check for fatal errors and extract file info
         const hasFatalError = this.detectFatalError(stdout, stderr);
         const fatalErrorInfo = hasFatalError ? this.extractFatalErrorInfo(stdout, stderr) : null;
-        
+
         // If there's a fatal error and no test results, it means execution stopped early
         // We should only mark the file with the fatal error, not assume others passed
         const executionStoppedEarly = hasFatalError && testResults.size === 0;
-        
+
         // Track if we found any test results in the output
         let foundAnyResults = false;
         let allChildrenPassed = true;
@@ -1316,24 +1399,24 @@ export class CodeceptionTestProvider {
         if (executionStoppedEarly && fatalErrorInfo) {
             // DEV: Uncomment for debugging
             // this.outputChannel.appendLine('[Codeception] Fatal error detected - only marking affected file');
-            
+
             // Find and mark only the file with the fatal error
             parentTest.children.forEach(child => {
                 const childFilePath = child.uri?.fsPath;
                 const isFatalErrorFile = childFilePath && childFilePath.includes(fatalErrorInfo.file || '');
-                
+
                 if (isFatalErrorFile && child.children.size > 0) {
                     run.started(child);
                     foundAnyResults = true;
                     someChildrenFailed = true;
-                    
+
                     // Mark all methods in this file as failed
                     child.children.forEach(methodTest => {
                         run.started(methodTest);
                         const message = this.createErrorMessage(stdout, stderr, methodTest, 'Fatal error prevented test execution');
                         run.failed(methodTest, message);
                     });
-                    
+
                     // Mark the file as failed
                     const message = this.createErrorMessage(stdout, stderr, child);
                     run.failed(child, message);
@@ -1352,19 +1435,19 @@ export class CodeceptionTestProvider {
                     let fileAllPassed = true;
                     let fileSomeFailed = false;
                     let fileRanCount = 0;
-                    
+
                     child.children.forEach(methodTest => {
                         run.started(methodTest);
 
                         const methodName = this.extractMethodName(methodTest.id);
                         const result = testResults.get(methodName);
-                        
+
                         if (result) {
                             fileHadResults = true;
                             foundAnyResults = true;
                             ranChildrenCount++;
                             fileRanCount++;
-                            
+
                             if (result.passed) {
                                 run.passed(methodTest);
                             } else {
@@ -1383,7 +1466,7 @@ export class CodeceptionTestProvider {
                             run.passed(methodTest);
                         }
                     });
-                    
+
                     // Mark the file item based on its children's results
                     if (fileHadResults) {
                         // If ANY method failed, the file MUST be marked as failed
@@ -1435,7 +1518,7 @@ export class CodeceptionTestProvider {
                 const totalChildren = Array.from(parentTest.children).reduce((count, [_, child]) => {
                     return count + (child.children.size > 0 ? child.children.size : 1);
                 }, 0);
-                
+
                 if (ranChildrenCount === totalChildren) {
                     run.passed(parentTest);
                 }
@@ -1459,7 +1542,7 @@ export class CodeceptionTestProvider {
 
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
-            
+
             // Track current file being tested (e.g., "tests/unit/SomeTest.php")
             const fileMatch = line.match(/^(tests\/[^\s]+\.php)/);
             if (fileMatch) {
@@ -1502,7 +1585,7 @@ export class CodeceptionTestProvider {
                 const nextLine = lines[i + 1];
                 const isSuccess = nextLine.includes('OK') || nextLine.includes('PASSED');
                 const isFailure = nextLine.includes('FAILED') || nextLine.includes('FAILURE') || nextLine.includes('ERROR');
-                
+
                 if (isSuccess || isFailure) {
                     results.set(parenMatch[1], {
                         passed: isSuccess,
@@ -1554,13 +1637,13 @@ export class CodeceptionTestProvider {
 
     private extractFatalErrorInfo(stdout: string, stderr: string): { message: string; file?: string; line?: number } | null {
         const combinedOutput = stdout + '\n' + stderr;
-        
+
         // Pattern 1: Match HTML formatted error from stdout
         // <pre>PHP Fatal Error 'yii\base\ErrorException' with message 'Trait "..." not found'
         const htmlErrorMatch = combinedOutput.match(
             /<pre>PHP Fatal (?:Error|error)[^']*'([^']*)'[^']*with message\s+'([^']*)'[^<]*in\s+([^\s:]+):(\d+)/i
         );
-        
+
         if (htmlErrorMatch) {
             return {
                 message: `${htmlErrorMatch[1]}: ${htmlErrorMatch[2]}`,
@@ -1574,7 +1657,7 @@ export class CodeceptionTestProvider {
         const plainErrorMatch = combinedOutput.match(
             /PHP Fatal error:\s+(.+?)\s+in\s+([^\s]+)\s+on line\s+(\d+)/i
         );
-        
+
         if (plainErrorMatch) {
             return {
                 message: plainErrorMatch[1],
@@ -1597,21 +1680,21 @@ export class CodeceptionTestProvider {
     private createErrorMessage(stdout: string, stderr: string, test: vscode.TestItem, fallbackMessage?: string): vscode.TestMessage {
         // Check if there's a fatal error
         const fatalErrorInfo = this.extractFatalErrorInfo(stdout, stderr);
-        
+
         if (fatalErrorInfo) {
             const fullOutput = [stdout, stderr].filter(Boolean).join('\r\n\r\n');
             const message = new vscode.TestMessage(fullOutput || fatalErrorInfo.message);
-            
+
             // If we have file and line information, add location to the message
             if (fatalErrorInfo.file && fatalErrorInfo.line !== undefined) {
                 const fileUri = vscode.Uri.file(fatalErrorInfo.file);
                 const position = new vscode.Position(fatalErrorInfo.line - 1, 0);
                 message.location = new vscode.Location(fileUri, position);
             }
-            
+
             return message;
         }
-        
+
         // Fall back to regular error message
         const fullOutput = [stdout, stderr].filter(Boolean).join('\r\n\r\n');
         return new vscode.TestMessage(fullOutput || fallbackMessage || stderr || stdout);
@@ -1622,7 +1705,7 @@ export class CodeceptionTestProvider {
      */
     private isDockerError(errorMessage: string, stderr: string): boolean {
         const combinedError = `${errorMessage} ${stderr}`.toLowerCase();
-        
+
         return combinedError.includes('docker') && (
             combinedError.includes('command not found') ||
             combinedError.includes('not recognized') ||
@@ -1639,29 +1722,29 @@ export class CodeceptionTestProvider {
      */
     private getDockerErrorMessage(errorMessage: string, stderr: string): string {
         const combinedError = `${errorMessage} ${stderr}`.toLowerCase();
-        
-        if (combinedError.includes('command not found') || 
+
+        if (combinedError.includes('command not found') ||
             combinedError.includes('not recognized') ||
             combinedError.includes('enoent')) {
             return 'Docker command not found. Please ensure Docker is installed and in your PATH.';
         }
-        
+
         if (combinedError.includes('cannot connect to the docker daemon')) {
             return 'Cannot connect to Docker daemon. Please ensure Docker Desktop or Docker service is running.';
         }
-        
+
         if (combinedError.includes('no such container')) {
             return 'Container not found. The configured container may have stopped. Please select a running container.';
         }
-        
+
         if (combinedError.includes('is not running')) {
             return 'Container is not running. Please start the container or select a different one.';
         }
-        
+
         if (combinedError.includes('permission denied')) {
             return 'Permission denied accessing Docker. You may need to add your user to the docker group.';
         }
-        
+
         return errorMessage;
     }
 
